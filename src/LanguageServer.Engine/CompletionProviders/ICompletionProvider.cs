@@ -24,7 +24,7 @@ namespace MSBuildProjectTools.LanguageServer.CompletionProviders
         ///     Provide completions for the specified location.
         /// </summary>
         /// <param name="location">
-        ///     The <see cref="XmlLocation"/> where completions are requested.
+        ///     The <see cref="SourceLocation"/> where completions are requested.
         /// </param>
         /// <param name="projectDocument">
         ///     The <see cref="ProjectDocument"/> that contains the <paramref name="location"/>.
@@ -35,6 +35,6 @@ namespace MSBuildProjectTools.LanguageServer.CompletionProviders
         /// <returns>
         ///     A <see cref="Task{TResult}"/> that resolves either a list of <see cref="CompletionItem"/>s, or <c>null</c> if no completions are provided.
         /// </returns>
-        Task<CompletionList> ProvideCompletions(XmlLocation location, ProjectDocument projectDocument, CancellationToken cancellationToken = default(CancellationToken));
+        Task<CompletionList> ProvideCompletions(SourceLocation location, ProjectDocument projectDocument, CancellationToken cancellationToken = default(CancellationToken));
     }
 }

@@ -1,15 +1,13 @@
+using System;
 using Autofac;
 using OmniSharp.Extensions.LanguageServer.Server;
 using Serilog;
-using Serilog.Events;
-using System;
-
 using MSLogging = Microsoft.Extensions.Logging;
 
 namespace MSBuildProjectTools.LanguageServer
 {
     using Logging;
-    
+    using Serilog.Events;
     using LanguageServer = OmniSharp.Extensions.LanguageServer.Server.LanguageServer;
 
     /// <summary>
@@ -35,7 +33,7 @@ namespace MSBuildProjectTools.LanguageServer
         {
             if (builder == null)
                 throw new ArgumentNullException(nameof(builder));
-            
+
             builder.Register(CreateLogger)
                 .SingleInstance()
                 .As<ILogger>();
@@ -60,19 +58,20 @@ namespace MSBuildProjectTools.LanguageServer
         /// <returns>
         ///     The logger.
         /// </returns>
-        static ILogger CreateLogger(IComponentContext componentContext)
+        private static ILogger CreateLogger(IComponentContext componentContext)
         {
             if (componentContext == null)
                 throw new ArgumentNullException(nameof(componentContext));
-            
+
             Configuration configuration = componentContext.Resolve<Configuration>();
             ConfigureSeq(configuration.Logging.Seq);
 
             // Override default log level.
-            if (Environment.GetEnvironmentVariable("MSBUILD_PROJECT_TOOLS_VERBOSE_LOGGING") == "1")
+            bool debug = true;
+            if (debug)
             {
-                configuration.Logging.LevelSwitch.MinimumLevel = LogEventLevel.Verbose;
-                configuration.Logging.Seq.LevelSwitch.MinimumLevel = LogEventLevel.Verbose;
+                configuration.Logging.LevelSwitch.MinimumLevel = LogEventLevel.Debug;
+                configuration.Logging.Seq.LevelSwitch.MinimumLevel = LogEventLevel.Debug;
             }
 
             ILanguageServer languageServer = componentContext.Resolve<ILanguageServer>();
@@ -91,7 +90,7 @@ namespace MSBuildProjectTools.LanguageServer
                 );
             }
 
-            string logFilePath = Environment.GetEnvironmentVariable("MSBUILD_PROJECT_TOOLS_LOG_FILE");
+            string logFilePath = ".\\logs\\log.txt";
             if (!String.IsNullOrWhiteSpace(logFilePath))
             {
                 loggerConfiguration = loggerConfiguration.WriteTo.File(
@@ -118,11 +117,11 @@ namespace MSBuildProjectTools.LanguageServer
         /// <param name="configuration">
         ///     The language server's Seq logging configuration.
         /// </param>
-        static void ConfigureSeq(SeqLoggingConfiguration configuration)
+        private static void ConfigureSeq(SeqLoggingConfiguration configuration)
         {
             if (configuration == null)
                 throw new ArgumentNullException(nameof(configuration));
-            
+
             // We have to use environment variables here since at configuration time there's no LSP connection yet.
             configuration.Url = Environment.GetEnvironmentVariable("MSBUILD_PROJECT_TOOLS_SEQ_URL");
             configuration.ApiKey = Environment.GetEnvironmentVariable("MSBUILD_PROJECT_TOOLS_SEQ_API_KEY");

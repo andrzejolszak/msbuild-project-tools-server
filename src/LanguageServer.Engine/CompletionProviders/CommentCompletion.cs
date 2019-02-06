@@ -1,10 +1,9 @@
-using OmniSharp.Extensions.LanguageServer.Protocol.Models;
-using Serilog;
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using OmniSharp.Extensions.LanguageServer.Protocol.Models;
+using Serilog;
 
 using LspModels = OmniSharp.Extensions.LanguageServer.Protocol.Models;
 
@@ -40,7 +39,7 @@ namespace MSBuildProjectTools.LanguageServer.CompletionProviders
         ///     Provide completions for the specified location.
         /// </summary>
         /// <param name="location">
-        ///     The <see cref="XmlLocation"/> where completions are requested.
+        ///     The <see cref="SourceLocation"/> where completions are requested.
         /// </param>
         /// <param name="projectDocument">
         ///     The <see cref="ProjectDocument"/> that contains the <paramref name="location"/>.
@@ -51,7 +50,7 @@ namespace MSBuildProjectTools.LanguageServer.CompletionProviders
         /// <returns>
         ///     A <see cref="Task{TResult}"/> that resolves either a <see cref="CompletionList"/>s, or <c>null</c> if no completions are provided.
         /// </returns>
-        public override async Task<CompletionList> ProvideCompletions(XmlLocation location, ProjectDocument projectDocument, CancellationToken cancellationToken = default(CancellationToken))
+        public override async Task<CompletionList> ProvideCompletions(SourceLocation location, ProjectDocument projectDocument, CancellationToken cancellationToken = default(CancellationToken))
         {
             if (location == null)
                 throw new ArgumentNullException(nameof(location));
@@ -65,14 +64,9 @@ namespace MSBuildProjectTools.LanguageServer.CompletionProviders
 
             using (await projectDocument.Lock.ReaderLockAsync())
             {
-                XSElement replaceElement;
-                if (!location.CanCompleteElement(out replaceElement))
-                {
-                    Log.Verbose("Not offering any completions for {XmlLocation:l} (cannot insert or replace an element here).", location);
-
-                    return null;
-                }
-            if (replaceElement != null)
+                SourceNode replaceElement = null;
+                // TODO
+                if (replaceElement != null)
                 {
                     Log.Verbose("Offering completions to replace element {ElementName} @ {ReplaceRange:l}",
                         replaceElement.Name,
@@ -122,7 +116,7 @@ namespace MSBuildProjectTools.LanguageServer.CompletionProviders
                 throw new ArgumentNullException(nameof(replaceRange));
 
             LspModels.Range completionRange = replaceRange.ToLsp();
-            
+
             // <!--  -->
             yield return new CompletionItem
             {

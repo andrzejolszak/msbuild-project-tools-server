@@ -1,6 +1,5 @@
 using System.Collections.Generic;
 using Newtonsoft.Json;
-using Newtonsoft.Json.Linq;
 using Serilog.Core;
 using Serilog.Events;
 
@@ -8,6 +7,37 @@ using Serilog.Events;
 
 namespace MSBuildProjectTools.LanguageServer
 {
+    /// <summary>
+    ///     Represents a data-source for completion.
+    /// </summary>
+    public enum CompletionSource
+    {
+        /// <summary>
+        ///     Item types.
+        /// </summary>
+        ItemType,
+
+        /// <summary>
+        ///     Item metadata names.
+        /// </summary>
+        ItemMetadata,
+
+        /// <summary>
+        ///     Property names.
+        /// </summary>
+        Property,
+
+        /// <summary>
+        ///     Target names.
+        /// </summary>
+        Target,
+
+        /// <summary>
+        ///     Task metadata (names, parameters, etc).
+        /// </summary>
+        Task
+    }
+
     /// <summary>
     ///     The configuration for the MSBuild language service.
     /// </summary>
@@ -36,18 +66,6 @@ namespace MSBuildProjectTools.LanguageServer
         /// </summary>
         [JsonProperty("language", ObjectCreationHandling = ObjectCreationHandling.Reuse)]
         public LanguageConfiguration Language { get; } = new LanguageConfiguration();
-
-        /// <summary>
-        ///     The MSBuild language service's MSBuild engine configuration.
-        /// </summary>
-        [JsonProperty("msbuild", ObjectCreationHandling = ObjectCreationHandling.Reuse)]
-        public MSBuildConfiguration MSBuild { get; } = new MSBuildConfiguration();
-        
-        /// <summary>
-        ///     The MSBuild language service's NuGet configuration.
-        /// </summary>
-        [JsonProperty("nuget", ObjectCreationHandling = ObjectCreationHandling.Reuse)]
-        public NuGetConfiguration NuGet { get; } = new NuGetConfiguration();
 
         /// <summary>
         ///     Experimental features (if any) that are currently enabled.
@@ -169,31 +187,6 @@ namespace MSBuildProjectTools.LanguageServer
     }
 
     /// <summary>
-    ///     Configuration for the MSBuild engine.
-    /// </summary>
-    public class MSBuildConfiguration
-    {
-        /// <summary>
-        ///     Create a new <see cref="MSBuildConfiguration"/>.
-        /// </summary>
-        public MSBuildConfiguration()
-        {
-        }
-
-        /// <summary>
-        ///     Override the default value of MSBuildExtensionsPath.
-        /// </summary>
-        [JsonProperty("extensionsPath")]
-        public string ExtensionsPath { get; set; }
-
-        /// <summary>
-        ///     Override the default value of MSBuildExtensionsPath32.
-        /// </summary>
-        [JsonProperty("extensionsPath32")]
-        public string ExtensionsPath32 { get; set; }
-    }
-
-    /// <summary>
     ///     Configuration for disabled language-service features.
     /// </summary>
     public class DisabledFeatureConfiguration
@@ -203,66 +196,5 @@ namespace MSBuildProjectTools.LanguageServer
         /// </summary>
         [JsonProperty("hover")]
         public bool Hover { get; set; }
-    }
-
-    /// <summary>
-    ///     NuGet-related configuration for the language service.
-    /// </summary>
-    public class NuGetConfiguration
-    {
-        /// <summary>
-        ///     Disable automatic warm-up of the NuGet API client?
-        /// </summary>
-        [JsonProperty("disablePreFetch")]
-        public bool DisablePreFetch { get; set; } = false;
-
-        /// <summary>
-        ///     Include suggestions for pre-release packages and package versions?
-        /// </summary>
-        [JsonProperty("includePreRelease", DefaultValueHandling = DefaultValueHandling.IgnoreAndPopulate)]
-        public bool IncludePreRelease { get; set; } = false;
-
-        /// <summary>
-        ///     Include suggestions for packages from local (file-based) package sources?
-        /// </summary>
-        [JsonProperty("includeLocalSources", DefaultValueHandling = DefaultValueHandling.IgnoreAndPopulate)]
-        public bool IncludeLocalSources { get; set; } = false;
-
-        /// <summary>
-        ///     Sort package versions in descending order (i.e. newest versions first)?
-        /// </summary>
-        [JsonProperty("newestVersionsFirst")]
-        public bool ShowNewestVersionsFirst { get; set; } = true;
-    }
-
-    /// <summary>
-    ///     Represents a data-source for completion.
-    /// </summary>
-    public enum CompletionSource
-    {
-        /// <summary>
-        ///     Item types.
-        /// </summary>
-        ItemType,
-
-        /// <summary>
-        ///     Item metadata names.
-        /// </summary>
-        ItemMetadata,
-
-        /// <summary>
-        ///     Property names.
-        /// </summary>
-        Property,
-
-        /// <summary>
-        ///     Target names.
-        /// </summary>
-        Target,
-
-        /// <summary>
-        ///     Task metadata (names, parameters, etc).
-        /// </summary>
-        Task
     }
 }

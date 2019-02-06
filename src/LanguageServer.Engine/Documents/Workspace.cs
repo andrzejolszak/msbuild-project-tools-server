@@ -1,22 +1,14 @@
-using OmniSharp.Extensions.LanguageServer;
-using OmniSharp.Extensions.LanguageServer.Protocol.Models;
-using OmniSharp.Extensions.LanguageServer.Protocol;
-using OmniSharp.Extensions.LanguageServer.Server;
-using Newtonsoft.Json;
-using Serilog;
 using System;
 using System.Collections.Concurrent;
-using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
-using System.Xml;
+using OmniSharp.Extensions.LanguageServer.Server;
+using Serilog;
 
 namespace MSBuildProjectTools.LanguageServer.Documents
 {
     using Diagnostics;
-    using Help;
-    using SemanticModel;
     using Utilities;
 
     /// <summary>
@@ -28,8 +20,8 @@ namespace MSBuildProjectTools.LanguageServer.Documents
         /// <summary>
         ///     Documents for loaded project, keyed by document URI.
         /// </summary>
-        readonly ConcurrentDictionary<Uri, ProjectDocument> _projectDocuments = new ConcurrentDictionary<Uri, ProjectDocument>();
-        
+        private readonly ConcurrentDictionary<Uri, ProjectDocument> _projectDocuments = new ConcurrentDictionary<Uri, ProjectDocument>();
+
         /// <summary>
         ///     Create a new <see cref="Workspace"/>.
         /// </summary>
@@ -55,10 +47,10 @@ namespace MSBuildProjectTools.LanguageServer.Documents
 
             if (diagnosticsPublisher == null)
                 throw new ArgumentNullException(nameof(diagnosticsPublisher));
-            
+
             if (logger == null)
                 throw new ArgumentNullException(nameof(logger));
-            
+
             Server = server;
             Configuration = configuration;
             DiagnosticsPublisher = diagnosticsPublisher;
@@ -77,36 +69,12 @@ namespace MSBuildProjectTools.LanguageServer.Documents
             );
         }
 
-         /// <summary>
+        /// <summary>
         ///     Finaliser for <see cref="Workspace"/>.
         /// </summary>
         ~Workspace()
         {
             Dispose(false);
-        }
-
-        /// <summary>
-        ///     Dispose of resources being used by the <see cref="Workspace"/>.
-        /// </summary>
-        public void Dispose()
-        {
-            Dispose(true);
-            GC.SuppressFinalize(this);
-        }
-
-        /// <summary>
-        ///     Dispose of resources being used by the <see cref="Workspace"/>.
-        /// </summary>
-        /// <param name="disposing">
-        ///     Explicit disposal?
-        /// </param>
-        protected virtual void Dispose(bool disposing)
-        {
-            ProjectDocument[] projectDocuments = _projectDocuments.Values.ToArray();
-            _projectDocuments.Clear();
-
-            foreach (ProjectDocument projectDocument in projectDocuments)
-                projectDocument.Dispose();
         }
 
         /// <summary>
@@ -141,32 +109,36 @@ namespace MSBuildProjectTools.LanguageServer.Documents
         public FileInfo TaskMetadataCacheFile { get; }
 
         /// <summary>
-        ///     The cache for MSBuild task metadata.
-        /// </summary>
-        public MSBuildTaskMetadataCache TaskMetadataCache { get; } = new MSBuildTaskMetadataCache();
-
-        /// <summary>
         ///     The master project (if any).
         /// </summary>
         /// <remarks>
         ///     TODO: Make this selectable from the editor (get the extension to show a pick-list of open projects).
         /// </remarks>
-        MasterProjectDocument MasterProject { get; set; }
+        private MasterProjectDocument MasterProject { get; set; }
 
         /// <summary>
         ///     The language server.
         /// </summary>
-        ILanguageServer Server { get; }
+        private ILanguageServer Server { get; }
 
         /// <summary>
         ///     The diagnostic publishing facility.
         /// </summary>
-        IPublishDiagnostics DiagnosticsPublisher { get; }
+        private IPublishDiagnostics DiagnosticsPublisher { get; }
 
         /// <summary>
         ///     The workspace logger.
         /// </summary>
-        ILogger Log { get; }
+        private ILogger Log { get; }
+
+        /// <summary>
+        ///     Dispose of resources being used by the <see cref="Workspace"/>.
+        /// </summary>
+        public void Dispose()
+        {
+            Dispose(true);
+            GC.SuppressFinalize(this);
+        }
 
         /// <summary>
         ///     Try to retrieve the current state for the specified project document.
@@ -192,10 +164,7 @@ namespace MSBuildProjectTools.LanguageServer.Documents
                 if (MasterProject == null)
                     return MasterProject = new MasterProjectDocument(this, documentUri, Log);
 
-                SubProjectDocument subProject = new SubProjectDocument(this, documentUri, Log, MasterProject);
-                MasterProject.AddSubProject(subProject);
-
-                return subProject;
+                return MasterProject;
             });
 
             try
@@ -207,13 +176,6 @@ namespace MSBuildProjectTools.LanguageServer.Documents
                         await projectDocument.Load();
                     }
                 }
-            }
-            catch (XmlException invalidXml)
-            {
-                Log.Error("Error parsing project file {ProjectFilePath}: {ErrorMessage:l}",
-                    projectFilePath,
-                    invalidXml.Message
-                );
             }
             catch (Exception loadError)
             {
@@ -310,13 +272,13 @@ namespace MSBuildProjectTools.LanguageServer.Documents
         {
             if (documentUri == null)
                 throw new ArgumentNullException(nameof(documentUri));
-            
+
             ProjectDocument projectDocument;
             if (!_projectDocuments.TryRemove(documentUri, out projectDocument))
                 return false;
-            
+
             if (MasterProject == projectDocument)
-                MasterProject = null;                
+                MasterProject = null;
 
             using (await projectDocument.Lock.WriterLockAsync())
             {
@@ -341,8 +303,6 @@ namespace MSBuildProjectTools.LanguageServer.Documents
 
             try
             {
-                TaskMetadataCache.Load(TaskMetadataCacheFile.FullName);
-
                 return true;
             }
             catch (Exception cacheLoadError)
@@ -358,13 +318,23 @@ namespace MSBuildProjectTools.LanguageServer.Documents
         /// </summary>
         public void PersistTaskMetadataCache()
         {
-            if (!TaskMetadataCache.IsDirty)
-                return; // Nothing new to persist.
-
             if (!TaskMetadataCacheFile.Directory.Exists)
                 ExtensionDataDirectory.Create();
+        }
 
-            TaskMetadataCache.Save(TaskMetadataCacheFile.FullName);
+        /// <summary>
+        ///     Dispose of resources being used by the <see cref="Workspace"/>.
+        /// </summary>
+        /// <param name="disposing">
+        ///     Explicit disposal?
+        /// </param>
+        protected virtual void Dispose(bool disposing)
+        {
+            ProjectDocument[] projectDocuments = _projectDocuments.Values.ToArray();
+            _projectDocuments.Clear();
+
+            foreach (ProjectDocument projectDocument in projectDocuments)
+                projectDocument.Dispose();
         }
     }
 }

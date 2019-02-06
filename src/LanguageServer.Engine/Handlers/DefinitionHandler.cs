@@ -1,24 +1,16 @@
+using System;
+using System.Threading;
+using System.Threading.Tasks;
 using OmniSharp.Extensions.JsonRpc;
-using OmniSharp.Extensions.LanguageServer;
 using OmniSharp.Extensions.LanguageServer.Protocol;
 using OmniSharp.Extensions.LanguageServer.Protocol.Client.Capabilities;
 using OmniSharp.Extensions.LanguageServer.Protocol.Models;
 using OmniSharp.Extensions.LanguageServer.Server;
-using Microsoft.Language.Xml;
-using NuGet.Versioning;
 using Serilog;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
 
 namespace MSBuildProjectTools.LanguageServer.Handlers
 {
-    using ContentProviders;
     using Documents;
-    using SemanticModel;
-    using Utilities;
 
     /// <summary>
     ///     Handler for symbol definition requests.
@@ -50,17 +42,17 @@ namespace MSBuildProjectTools.LanguageServer.Handlers
         /// <summary>
         ///     The document workspace.
         /// </summary>
-        Workspace Workspace { get; }
+        private Workspace Workspace { get; }
 
         /// <summary>
         ///     The language server configuration.
         /// </summary>
-        Configuration Configuration { get; }
+        private Configuration Configuration { get; }
 
         /// <summary>
         ///     The document selector that describes documents to synchronise.
         /// </summary>
-        DocumentSelector DocumentSelector { get; } = new DocumentSelector(
+        private DocumentSelector DocumentSelector { get; } = new DocumentSelector(
             new DocumentFilter
             {
                 Pattern = "**/*.*",
@@ -90,7 +82,7 @@ namespace MSBuildProjectTools.LanguageServer.Handlers
         /// <summary>
         ///     Get registration options for handling document events.
         /// </summary>
-        TextDocumentRegistrationOptions DocumentRegistrationOptions
+        private TextDocumentRegistrationOptions DocumentRegistrationOptions
         {
             get => new TextDocumentRegistrationOptions
             {
@@ -101,70 +93,12 @@ namespace MSBuildProjectTools.LanguageServer.Handlers
         /// <summary>
         ///     Has the client supplied symbol definition capabilities?
         /// </summary>
-        bool HaveDefinitionCapabilities => DefinitionCapabilities != null;
+        private bool HaveDefinitionCapabilities => DefinitionCapabilities != null;
 
         /// <summary>
         ///     The client's symbol definition capabilities.
         /// </summary>
-        DefinitionCapability DefinitionCapabilities { get; set; }
-
-        /// <summary>
-        ///     Called when a definition is requested.
-        /// </summary>
-        /// <param name="parameters">
-        ///     The request parameters.
-        /// </param>
-        /// <param name="cancellationToken">
-        ///     A <see cref="CancellationToken"/> that can be used to cancel the request.
-        /// </param>
-        /// <returns>
-        ///     A <see cref="Task"/> representing the operation whose result is the definition location or <c>null</c> if no definition is provided.
-        /// </returns>
-        async Task<LocationOrLocations> OnDefinition(TextDocumentPositionParams parameters, CancellationToken cancellationToken)
-        {
-            ProjectDocument projectDocument = await Workspace.GetProjectDocument(parameters.TextDocument.Uri);
-
-            using (await projectDocument.Lock.ReaderLockAsync(cancellationToken))
-            {
-                if (!projectDocument.HasMSBuildProject || projectDocument.IsMSBuildProjectCached)
-                    return null;
-
-                Position position = parameters.Position.ToNative();
-                MSBuildObject msbuildObjectAtPosition = projectDocument.GetMSBuildObjectAtPosition(position);
-                if (msbuildObjectAtPosition == null)
-                    return null;
-
-                if (msbuildObjectAtPosition is MSBuildSdkImport sdkImportAtPosition)
-                {
-                    // TODO: Parse imported project and determine location of root element (use that range instead).
-                    Location[] locations =
-                        sdkImportAtPosition.ImportedProjectRoots.Select(
-                            importedProjectRoot => new Location
-                            {
-                                Range = Range.Empty.ToLsp(),
-                                Uri = VSCodeDocumentUri.FromFileSystemPath(importedProjectRoot.Location.File)
-                            }
-                        )
-                        .ToArray();
-
-                    return new LocationOrLocations(locations);
-                }
-                else if (msbuildObjectAtPosition is MSBuildImport importAtPosition)
-                {
-                    // TODO: Parse imported project and determine location of root element (use that range instead).
-                    return new LocationOrLocations(
-                        importAtPosition.ImportedProjectRoots.Select(
-                            importedProjectRoot => new Location
-                            {
-                                Range = Range.Empty.ToLsp(),
-                                Uri = VSCodeDocumentUri.FromFileSystemPath(importedProjectRoot.Location.File)
-                            }
-                    ));
-                }
-            }
-
-            return null;
-        }
+        private DefinitionCapability DefinitionCapabilities { get; set; }
 
         /// <summary>
         ///     Handle a request for a definition.
@@ -215,6 +149,29 @@ namespace MSBuildProjectTools.LanguageServer.Handlers
         void ICapability<DefinitionCapability>.SetCapability(DefinitionCapability capabilities)
         {
             DefinitionCapabilities = capabilities;
+        }
+
+        /// <summary>
+        ///     Called when a definition is requested.
+        /// </summary>
+        /// <param name="parameters">
+        ///     The request parameters.
+        /// </param>
+        /// <param name="cancellationToken">
+        ///     A <see cref="CancellationToken"/> that can be used to cancel the request.
+        /// </param>
+        /// <returns>
+        ///     A <see cref="Task"/> representing the operation whose result is the definition location or <c>null</c> if no definition is provided.
+        /// </returns>
+        private async Task<LocationOrLocations> OnDefinition(TextDocumentPositionParams parameters, CancellationToken cancellationToken)
+        {
+            ProjectDocument projectDocument = await Workspace.GetProjectDocument(parameters.TextDocument.Uri);
+
+            using (await projectDocument.Lock.ReaderLockAsync(cancellationToken))
+            {
+            }
+
+            return null;
         }
     }
 }

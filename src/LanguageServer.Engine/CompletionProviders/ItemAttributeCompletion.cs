@@ -1,11 +1,11 @@
-using OmniSharp.Extensions.LanguageServer.Protocol.Models;
-using Serilog;
 using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using OmniSharp.Extensions.LanguageServer.Protocol.Models;
+using Serilog;
 
 namespace MSBuildProjectTools.LanguageServer.CompletionProviders
 {
@@ -56,7 +56,7 @@ namespace MSBuildProjectTools.LanguageServer.CompletionProviders
         ///     Provide completions for the specified location.
         /// </summary>
         /// <param name="location">
-        ///     The <see cref="XmlLocation"/> where completions are requested.
+        ///     The <see cref="SourceLocation"/> where completions are requested.
         /// </param>
         /// <param name="projectDocument">
         ///     The <see cref="ProjectDocument"/> that contains the <paramref name="location"/>.
@@ -67,7 +67,7 @@ namespace MSBuildProjectTools.LanguageServer.CompletionProviders
         /// <returns>
         ///     A <see cref="Task{TResult}"/> that resolves either a <see cref="CompletionList"/>s, or <c>null</c> if no completions are provided.
         /// </returns>
-        public override async Task<CompletionList> ProvideCompletions(XmlLocation location, ProjectDocument projectDocument, CancellationToken cancellationToken = default(CancellationToken))
+        public override async Task<CompletionList> ProvideCompletions(SourceLocation location, ProjectDocument projectDocument, CancellationToken cancellationToken = default(CancellationToken))
         {
             if (location == null)
                 throw new ArgumentNullException(nameof(location));
@@ -79,35 +79,19 @@ namespace MSBuildProjectTools.LanguageServer.CompletionProviders
 
             using (await projectDocument.Lock.ReaderLockAsync())
             {
-                XSElement element;
-                XSAttribute replaceAttribute;
-                PaddingType needsPadding;
-                if (!location.CanCompleteAttribute(out element, out replaceAttribute, out needsPadding))
-                    return null;
+                Range replaceRange = location.Position.ToEmptyRange();
 
-                // Must be a valid item element.
-                if (!element.IsValid || !element.HasParentPath(WellKnownElementPaths.ItemGroup))
-                    return null;
-
-                Range replaceRange = replaceAttribute?.Range ?? location.Position.ToEmptyRange();
-                
                 completions.AddRange(
-                    WellKnownItemAttributes.Except(
-                        element.AttributeNames
-                    )
+                    WellKnownItemAttributes
                     .Select(attributeName => new CompletionItem
                     {
                         Label = attributeName,
                         Detail = "Attribute",
-                        Documentation =
-                            MSBuildSchemaHelp.ForItemMetadata(itemType: element.Name, metadataName: attributeName)
-                            ??
-                            MSBuildSchemaHelp.ForAttribute(element.Name, attributeName),
                         Kind = CompletionItemKind.Field,
                         SortText = GetItemSortText(attributeName),
                         TextEdit = new TextEdit
                         {
-                            NewText = $"{attributeName}=\"$1\"$0".WithPadding(needsPadding),
+                            NewText = $"{attributeName}=\"$1\"$0".WithPadding(PaddingType.None),
                             Range = replaceRange.ToLsp()
                         },
                         InsertTextFormat = InsertTextFormat.Snippet

@@ -1,13 +1,11 @@
-using Sprache;
-using System.Collections.Generic;
-using Xunit;
 using System;
+using System.Collections.Generic;
 using System.Linq;
+using Sprache;
+using Xunit;
 
 namespace MSBuildProjectTools.LanguageServer.Tests
 {
-    using SemanticModel.MSBuildExpressions;
-
     /// <summary>
     ///     Assertions for testing parsers.
     /// </summary>

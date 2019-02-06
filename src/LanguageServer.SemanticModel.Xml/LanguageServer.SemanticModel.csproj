@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <AssemblyName>MSBuildProjectTools.LanguageServer.SemanticModel.Xml</AssemblyName>
+    <RootNamespace>MSBuildProjectTools.LanguageServer.SemanticModel</RootNamespace>
+  </PropertyGroup>
+
+  <Import Project="../Common.props" />
+
+  <ItemGroup>
+    <PackageReference Include="Sprache" Version="2.2.0" />
+    <PackageReference Include="System.Collections.Immutable" Version="1.5.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../LanguageServer.Common/LanguageServer.Common.csproj" />
+  </ItemGroup>
+</Project>

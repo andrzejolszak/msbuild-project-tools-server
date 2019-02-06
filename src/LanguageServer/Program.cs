@@ -1,30 +1,24 @@
-﻿using Autofac;
-using OmniSharp.Extensions.LanguageServer;
-using Serilog;
 using System;
-using System.Collections.Generic;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
-
+using Autofac;
+using Serilog;
 using LSP = OmniSharp.Extensions.LanguageServer;
 
 namespace MSBuildProjectTools.LanguageServer
 {
-    using Documents;
-    using Handlers;
-    using Logging;
     using Utilities;
 
     /// <summary>
     ///     The MSBuild language server.
     /// </summary>
-    static class Program
+    internal static class Program
     {
         /// <summary>
         ///     The main program entry-point.
         /// </summary>
-        static void Main()
+        private static void Main()
         {
             SynchronizationContext.SetSynchronizationContext(
                 new SynchronizationContext()
@@ -59,7 +53,7 @@ namespace MSBuildProjectTools.LanguageServer
         /// <returns>
         ///     A <see cref="Task"/> representing program execution.
         /// </returns>
-        static async Task AsyncMain()
+        private static async Task AsyncMain()
         {
             using (ActivityCorrelationManager.BeginActivityScope())
             using (Terminator terminator = new Terminator())
@@ -68,7 +62,7 @@ namespace MSBuildProjectTools.LanguageServer
                 // Force initialisation of logging.
                 ILogger log = container.Resolve<ILogger>().ForContext(typeof(Program));
 
-                log.Debug("Creating language server...");
+                log.Information("Creating language server...");
 
                 var server = container.Resolve<LSP.Server.LanguageServer>();
 
@@ -103,10 +97,10 @@ namespace MSBuildProjectTools.LanguageServer
         /// <returns>
         ///     The container.
         /// </returns>
-        static IContainer BuildContainer()
+        private static IContainer BuildContainer()
         {
             ContainerBuilder builder = new ContainerBuilder();
-            
+
             builder.RegisterModule<LoggingModule>();
             builder.RegisterModule<LanguageServerModule>();
 
@@ -116,7 +110,7 @@ namespace MSBuildProjectTools.LanguageServer
         /// <summary>
         ///     Auto-detect the directory containing the extension's files.
         /// </summary>
-        static void AutoDetectExtensionDirectory()
+        private static void AutoDetectExtensionDirectory()
         {
             string extensionDir = Environment.GetEnvironmentVariable("MSBUILD_PROJECT_TOOLS_DIR");
             if (String.IsNullOrWhiteSpace(extensionDir))

@@ -1,24 +1,18 @@
-using OmniSharp.Extensions.JsonRpc;
-using OmniSharp.Extensions.LanguageServer;
-using OmniSharp.Extensions.LanguageServer.Protocol.Client.Capabilities;
-using OmniSharp.Extensions.LanguageServer.Protocol.Models;
-using OmniSharp.Extensions.LanguageServer.Protocol;
-using OmniSharp.Extensions.LanguageServer.Server;
-using Microsoft.Language.Xml;
-using NuGet.Versioning;
-using Serilog;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-    
+using OmniSharp.Extensions.JsonRpc;
+using OmniSharp.Extensions.LanguageServer.Protocol;
+using OmniSharp.Extensions.LanguageServer.Protocol.Client.Capabilities;
+using OmniSharp.Extensions.LanguageServer.Protocol.Models;
+using OmniSharp.Extensions.LanguageServer.Server;
+using Serilog;
+
 namespace MSBuildProjectTools.LanguageServer.Handlers
 {
-    using ContentProviders;
     using Documents;
-    using SemanticModel;
-    using Utilities;
 
     /// <summary>
     ///     Handler for document symbol requests.
@@ -50,12 +44,12 @@ namespace MSBuildProjectTools.LanguageServer.Handlers
         /// <summary>
         ///     The document workspace.
         /// </summary>
-        Workspace Workspace { get; }
+        private Workspace Workspace { get; }
 
         /// <summary>
         ///     The document selector that describes documents to synchronise.
         /// </summary>
-        DocumentSelector DocumentSelector { get; } = new DocumentSelector(
+        private DocumentSelector DocumentSelector { get; } = new DocumentSelector(
             new DocumentFilter
             {
                 Pattern = "**/*.*",
@@ -85,7 +79,7 @@ namespace MSBuildProjectTools.LanguageServer.Handlers
         /// <summary>
         ///     Get registration options for handling document events.
         /// </summary>
-        TextDocumentRegistrationOptions DocumentRegistrationOptions
+        private TextDocumentRegistrationOptions DocumentRegistrationOptions
         {
             get => new TextDocumentRegistrationOptions
             {
@@ -96,110 +90,12 @@ namespace MSBuildProjectTools.LanguageServer.Handlers
         /// <summary>
         ///     Has the client supplied document symbol capabilities?
         /// </summary>
-        bool HaveDocumentSymbolCapabilities => DocumentSymbolCapabilities != null;
+        private bool HaveDocumentSymbolCapabilities => DocumentSymbolCapabilities != null;
 
         /// <summary>
         ///     The client's document symbol capabilities.
         /// </summary>
-        DocumentSymbolCapability DocumentSymbolCapabilities { get; set; }
-
-        /// <summary>
-        ///     Called when completions are requested.
-        /// </summary>
-        /// <param name="parameters">
-        ///     The request parameters.
-        /// </param>
-        /// <param name="cancellationToken">
-        ///     A <see cref="CancellationToken"/> that can be used to cancel the request.
-        /// </param>
-        /// <returns>
-        ///     A <see cref="Task"/> representing the operation whose result is the completion list or <c>null</c> if no completions are provided.
-        /// </returns>
-        async Task<DocumentSymbolInformationContainer> OnDocumentSymbols(DocumentSymbolParams parameters, CancellationToken cancellationToken)
-        {
-            ProjectDocument projectDocument = await Workspace.GetProjectDocument(parameters.TextDocument.Uri);
-
-            List<DocumentSymbolInformation> symbols = new List<DocumentSymbolInformation>();
-            using (await projectDocument.Lock.ReaderLockAsync(cancellationToken))
-            {
-                // We need a valid MSBuild project with up-to-date positional information.
-                if (!projectDocument.HasMSBuildProject || projectDocument.IsMSBuildProjectCached)
-                    return null;
-
-                foreach (MSBuildObject msbuildObject in projectDocument.MSBuildObjects)
-                {
-                    // Special case for item groups, which can contribute multiple symbols from a single item group.
-                    if (msbuildObject is MSBuildItemGroup itemGroup)
-                    {
-                        symbols.AddRange(itemGroup.Includes.Select(include =>
-                        {
-                            string trimmedInclude = String.Join(";",
-                                include.Split(
-                                    new char[] { ';' }, StringSplitOptions.RemoveEmptyEntries
-                                )
-                                .Select(includedItem => includedItem.Trim())
-                            );
-                                
-
-                            return new DocumentSymbolInformation
-                            {
-                                Name = $"{itemGroup.Name} ({trimmedInclude})",
-                                Kind = SymbolKind.Array,
-                                ContainerName = "Item",
-                                Location = new Location
-                                {
-                                    Uri = projectDocument.DocumentUri,
-                                    Range = msbuildObject.XmlRange.ToLsp()
-                                }
-                            };
-                        }));
-
-                        continue;
-                    }
-
-                    DocumentSymbolInformation symbol = new DocumentSymbolInformation
-                    {
-                        Name = msbuildObject.Name,
-                        Location = new Location
-                        {
-                            Uri = projectDocument.DocumentUri,
-                            Range = msbuildObject.XmlRange.ToLsp()
-                        }
-                    };
-                    if (msbuildObject is MSBuildTarget)
-                    {
-                        symbol.ContainerName = "Target";
-                        symbol.Kind = SymbolKind.Function;
-                    }
-                    else if (msbuildObject is MSBuildProperty)
-                    {
-                        symbol.ContainerName = "Property";
-                        symbol.Kind = SymbolKind.Property;
-                    }
-                    else if (msbuildObject is MSBuildImport)
-                    {
-                        symbol.ContainerName = "Import";
-                        symbol.Kind = SymbolKind.Package;
-                    }
-                    else if (msbuildObject is MSBuildSdkImport)
-                    {
-                        symbol.ContainerName = "Import (SDK)";
-                        symbol.Kind = SymbolKind.Package;
-                    }
-                    else
-                        continue;
-
-                    symbols.Add(symbol);
-                }
-            }
-
-            if (symbols.Count == 0)
-                return null;
-
-            return new DocumentSymbolInformationContainer(
-                symbols.OrderBy(symbol => symbol.Name)
-            );
-        }
+        private DocumentSymbolCapability DocumentSymbolCapabilities { get; set; }
 
         /// <summary>
         ///     Get registration options for handling document events.
@@ -225,7 +121,7 @@ namespace MSBuildProjectTools.LanguageServer.Handlers
         {
             if (parameters == null)
                 throw new ArgumentNullException(nameof(parameters));
-            
+
             using (BeginOperation("OnDocumentSymbols"))
             {
                 try
@@ -250,6 +146,35 @@ namespace MSBuildProjectTools.LanguageServer.Handlers
         void ICapability<DocumentSymbolCapability>.SetCapability(DocumentSymbolCapability capabilities)
         {
             DocumentSymbolCapabilities = capabilities;
+        }
+
+        /// <summary>
+        ///     Called when completions are requested.
+        /// </summary>
+        /// <param name="parameters">
+        ///     The request parameters.
+        /// </param>
+        /// <param name="cancellationToken">
+        ///     A <see cref="CancellationToken"/> that can be used to cancel the request.
+        /// </param>
+        /// <returns>
+        ///     A <see cref="Task"/> representing the operation whose result is the completion list or <c>null</c> if no completions are provided.
+        /// </returns>
+        private async Task<DocumentSymbolInformationContainer> OnDocumentSymbols(DocumentSymbolParams parameters, CancellationToken cancellationToken)
+        {
+            ProjectDocument projectDocument = await Workspace.GetProjectDocument(parameters.TextDocument.Uri);
+
+            List<DocumentSymbolInformation> symbols = new List<DocumentSymbolInformation>();
+            using (await projectDocument.Lock.ReaderLockAsync(cancellationToken))
+            {
+            }
+
+            if (symbols.Count == 0)
+                return null;
+
+            return new DocumentSymbolInformationContainer(
+                symbols.OrderBy(symbol => symbol.Name)
+            );
         }
     }
 }

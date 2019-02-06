@@ -1,7 +1,5 @@
-using System;
 using System.IO;
 using Xunit;
-using Xunit.Abstractions;
 
 namespace MSBuildProjectTools.LanguageServer.Tests
 {
@@ -16,10 +14,10 @@ namespace MSBuildProjectTools.LanguageServer.Tests
         ///     Verify that <see cref="DotNetRuntimeInfo"/> can parse the output of "dotnet --info".
         /// </summary>
         [Theory(DisplayName = "Parse 'dotnet --info' output ")]
-        [InlineData("English", "2.1.401", @"C:\Program Files\dotnet\sdk\2.1.401\", "win10-x64", Examples.English_2_1_401)]
-        [InlineData("German", "2.1.403", @"C:\Program Files\dotnet\sdk\2.1.403\", "win10-x64", Examples.German_2_1_403)]
-        [InlineData("Chinese", "2.1.403", @"C:\Program Files\dotnet\sdk\2.1.403\", "win10-x64", Examples.Chinese_2_1_403)]
-        public void Parse(string language, string expectedVersion, string expectedBaseDirectory, string expectedRID, string dotnetInfoOutput)
+        [InlineData("2.1.401", @"C:\Program Files\dotnet\sdk\2.1.401\", "win10-x64", Examples.English_2_1_401)]
+        [InlineData("2.1.403", @"C:\Program Files\dotnet\sdk\2.1.403\", "win10-x64", Examples.German_2_1_403)]
+        [InlineData("2.1.403", @"C:\Program Files\dotnet\sdk\2.1.403\", "win10-x64", Examples.Chinese_2_1_403)]
+        public void Parse(string expectedVersion, string expectedBaseDirectory, string expectedRID, string dotnetInfoOutput)
         {
             DotNetRuntimeInfo parsedOutput;
 
@@ -37,7 +35,7 @@ namespace MSBuildProjectTools.LanguageServer.Tests
         /// <summary>
         ///     Output examples from "dotnet --info".
         /// </summary>
-        static class Examples
+        private static class Examples
         {
             /// <summary>
             ///     .NET Core SDK v2.1.401 (English)

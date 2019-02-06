@@ -1,28 +1,16 @@
-using Microsoft.Build.Evaluation;
-using Microsoft.Build.Exceptions;
-using Microsoft.Build.Execution;
-using Microsoft.Language.Xml;
-using Nito.AsyncEx;
-using NuGet.Configuration;
-using NuGet.Protocol.Core.Types;
-using NuGet.Versioning;
-using Microsoft.Build.Construction;
-using Serilog;
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using System.Xml;
-
+using Nito.AsyncEx;
+using Serilog;
 using LspModels = OmniSharp.Extensions.LanguageServer.Protocol.Models;
 
 namespace MSBuildProjectTools.LanguageServer.Documents
 {
     using SemanticModel;
     using SemanticModel.MSBuildExpressions;
-    using Serilog.Events;
     using Utilities;
 
     /// <summary>
@@ -34,40 +22,7 @@ namespace MSBuildProjectTools.LanguageServer.Documents
         /// <summary>
         ///     Diagnostics (if any) for the project.
         /// </summary>
-        readonly List<LspModels.Diagnostic> _diagnostics = new List<LspModels.Diagnostic>();
-
-        /// <summary>
-        ///     The project's configured package sources.
-        /// </summary>
-        readonly List<PackageSource> _configuredPackageSources = new List<PackageSource>();
-        
-        /// <summary>
-        ///     NuGet auto-complete APIs for configured package sources.
-        /// </summary>
-        readonly List<AutoCompleteResource> _autoCompleteResources = new List<AutoCompleteResource>();
-
-        /// <summary>
-        ///     The underlying MSBuild project collection.
-        /// </summary>
-        public ProjectCollection MSBuildProjectCollection { get; protected set; }
-
-        /// <summary>
-        ///     The underlying MSBuild project.
-        /// </summary>
-        public Project MSBuildProject { get; protected set; }
-
-        /// <summary>
-        ///     Is the underlying MSBuild project cached (i.e. out-of-date with respect to the source text)?
-        /// </summary>
-        /// <remarks>
-        ///     If the current project XML is invalid, the original MSBuild project is retained, but <see cref="MSBuildLocator"/> functionality will be unavailable (since source positions may no longer match up).
-        /// </remarks>
-        public bool IsMSBuildProjectCached { get; private set; }
-
-        /// <summary>
-        ///     Is parsing of MSBuild expressions enabled?
-        /// </summary>
-        public bool EnableExpressions { get; set; }
+        private readonly List<LspModels.Diagnostic> _diagnostics = new List<LspModels.Diagnostic>();
 
         /// <summary>
         ///     Create a new <see cref="ProjectDocument"/>.
@@ -116,23 +71,9 @@ namespace MSBuildProjectTools.LanguageServer.Documents
         }
 
         /// <summary>
-        ///     Dispose of resources being used by the <see cref="ProjectDocument"/>.
+        ///     Is parsing of MSBuild expressions enabled?
         /// </summary>
-        public void Dispose()
-        {
-            Dispose(true);
-            GC.SuppressFinalize(this);
-        }
-
-        /// <summary>
-        ///     Dispose of resources being used by the <see cref="ProjectDocument"/>.
-        /// </summary>
-        /// <param name="disposing">
-        ///     Explicit disposal?
-        /// </param>
-        protected virtual void Dispose(bool disposing)
-        {
-        }
+        public bool EnableExpressions { get; set; }
 
         /// <summary>
         ///     The document workspace.
@@ -170,21 +111,6 @@ namespace MSBuildProjectTools.LanguageServer.Documents
         public IReadOnlyList<LspModels.Diagnostic> Diagnostics => _diagnostics;
 
         /// <summary>
-        ///     The parsed project XML.
-        /// </summary>
-        public XmlDocumentSyntax Xml { get; protected set; }
-
-        /// <summary>
-        ///     Is the project XML currently loaded?
-        /// </summary>
-        public bool HasXml => Xml != null && XmlPositions != null;
-
-        /// <summary>
-        ///     Is the underlying MSBuild project currently loaded?
-        /// </summary>
-        public bool HasMSBuildProject => HasXml && MSBuildProjectCollection != null && MSBuildProject != null;
-
-        /// <summary>
         ///     Does the project have in-memory changes?
         /// </summary>
         public bool IsDirty { get; protected set; }
@@ -192,47 +118,26 @@ namespace MSBuildProjectTools.LanguageServer.Documents
         /// <summary>
         ///     The textual position translator for the project XML .
         /// </summary>
-        public TextPositions XmlPositions { get; protected set; }
+        public TextPositions SourcePositions { get; protected set; }
 
         /// <summary>
         ///     The project XML node lookup facility.
         /// </summary>
-        public XmlLocator XmlLocator { get; protected set; }
-
-        /// <summary>
-        ///     The project MSBuild object-lookup facility.
-        /// </summary>
-        protected MSBuildLocator MSBuildLocator { get; private set; }
-
-        /// <summary>
-        ///     MSBuild objects in the project that correspond to locations in the file.
-        /// </summary>
-        /// <exception cref="InvalidOperationException">
-        ///     The project is cached or not loaded.
-        /// </exception>
-        public IEnumerable<MSBuildObject> MSBuildObjects
-        {
-            get
-            {
-                if (!HasMSBuildProject)
-                    throw new InvalidOperationException($"MSBuild project '{ProjectFile.FullName}' is not loaded.");
-
-                if (IsMSBuildProjectCached)
-                    throw new InvalidOperationException($"MSBuild project '{ProjectFile.FullName}' is a cached (out-of-date) copy because the project XML is currently invalid; positional lookups can't work in this scenario.");
-
-                return MSBuildLocator.AllObjects;
-            }
-        }
-
-        /// <summary>
-        ///     NuGet package sources configured for the current project.
-        /// </summary>
-        public IReadOnlyList<PackageSource> ConfiguredPackageSources => _configuredPackageSources;
+        public SourceLocator SourceLocator { get; protected set; }
 
         /// <summary>
         ///     The document's logger.
         /// </summary>
         protected ILogger Log { get; set; }
+
+        /// <summary>
+        ///     Dispose of resources being used by the <see cref="ProjectDocument"/>.
+        /// </summary>
+        public void Dispose()
+        {
+            Dispose(true);
+            GC.SuppressFinalize(this);
+        }
 
         /// <summary>
         ///     Inspect the specified location in the XML.
@@ -241,17 +146,14 @@ namespace MSBuildProjectTools.LanguageServer.Documents
         ///     The location's position.
         /// </param>
         /// <returns>
-        ///     An <see cref="XmlLocation"/> representing the result of the inspection.
+        ///     An <see cref="SourceLocation"/> representing the result of the inspection.
         /// </returns>
-        public XmlLocation InspectXml(Position position)
+        public SourceLocation Inspect(Position position)
         {
             if (position == null)
                 throw new ArgumentNullException(nameof(position));
 
-            if (!HasXml)
-                throw new InvalidOperationException($"XML for project '{ProjectFile.FullName}' is not loaded.");
-
-            return XmlLocator.Inspect(position);
+            return SourceLocator.Inspect(position);
         }
 
         /// <summary>
@@ -267,30 +169,20 @@ namespace MSBuildProjectTools.LanguageServer.Documents
         {
             ClearDiagnostics();
 
-            Xml = null;
-            XmlPositions = null;
-            XmlLocator = null;
+            SourcePositions = null;
+            SourceLocator = null;
 
             string xml;
             using (StreamReader reader = ProjectFile.OpenText())
             {
                 xml = await reader.ReadToEndAsync();
             }
-            Xml = Parser.ParseText(xml);
-            XmlPositions = new TextPositions(xml);
-            XmlLocator = new XmlLocator(Xml, XmlPositions);
+            SourcePositions = new TextPositions(xml);
+            SourceLocator = new SourceLocator(SourcePositions);
 
             IsDirty = false;
 
-            await ConfigurePackageSources(cancellationToken);
-
-            bool loaded = TryLoadMSBuildProject();
-            if (loaded)
-                MSBuildLocator = new MSBuildLocator(MSBuildProject, XmlLocator, XmlPositions);
-            else
-                MSBuildLocator = null;
-
-            IsMSBuildProjectCached = !loaded;
+            bool loaded = TryLoadProject();
         }
 
         /// <summary>
@@ -306,172 +198,11 @@ namespace MSBuildProjectTools.LanguageServer.Documents
 
             ClearDiagnostics();
 
-            Xml = Parser.ParseText(xml);
-            XmlPositions = new TextPositions(xml);
-            XmlLocator = new XmlLocator(Xml, XmlPositions);
+            SourcePositions = new TextPositions(xml);
+            SourceLocator = new SourceLocator(SourcePositions);
             IsDirty = true;
 
-            bool loaded = TryLoadMSBuildProject();
-            if (loaded)
-                MSBuildLocator = new MSBuildLocator(MSBuildProject, XmlLocator, XmlPositions);
-            else
-                MSBuildLocator = null;
-
-            IsMSBuildProjectCached = !loaded;
-        }
-
-        /// <summary>
-        ///     Determine the NuGet package sources configured for the current project and create clients for them.
-        /// </summary>
-        /// <param name="cancellationToken">
-        ///     An optional <see cref="CancellationToken"/> that can be used to cancel the operation.
-        /// </param>
-        /// <returns>
-        ///     <c>true</c>, if the package sources were loaded; otherwise, <c>false</c>.
-        /// </returns>
-        public virtual async Task<bool> ConfigurePackageSources(CancellationToken cancellationToken = default(CancellationToken))
-        {
-            try
-            {
-                _configuredPackageSources.Clear();
-                _autoCompleteResources.Clear();
-
-                bool includeLocalSources = Workspace.Configuration.NuGet.IncludeLocalSources;
-                
-                _configuredPackageSources.AddRange(
-                    NuGetHelper.GetWorkspacePackageSources(ProjectFile.Directory.FullName)
-                        .Where(
-                            packageSource => packageSource.IsHttp || (includeLocalSources && packageSource.TrySourceAsUri?.Scheme == Uri.UriSchemeFile)
-                        )
-                );
-
-                Log.Information("{PackageSourceCount} package sources configured for project {ProjectFile}.",
-                    _configuredPackageSources.Count,
-                    VSCodeDocumentUri.GetFileSystemPath(DocumentUri)
-                );
-                foreach (PackageSource packageSource in _configuredPackageSources)
-                {
-                    if (packageSource.IsMachineWide)
-                    {
-                        Log.Information("  Globally-configured package source {PackageSourceName} (v{PackageSourceProtocolVersion}) => {PackageSourceUri}",
-                            packageSource.Name,
-                            packageSource.ProtocolVersion,
-                            packageSource.SourceUri
-                        );
-                    }
-                    else
-                    {
-                        Log.Information("  Locally-configured package source {PackageSourceName} (v{PackageSourceProtocolVersion}) => {PackageSourceUri}",
-                            packageSource.Name,
-                            packageSource.ProtocolVersion,
-                            packageSource.SourceUri
-                        );
-                    }
-                }
-
-                _autoCompleteResources.AddRange(
-                    await NuGetHelper.GetAutoCompleteResources(_configuredPackageSources, cancellationToken)
-                );
-
-                return true;
-            }
-            catch (Exception packageSourceLoadError)
-            {
-                Log.Error(packageSourceLoadError, "Error configuring NuGet package sources for MSBuild project '{ProjectFileName}'.", ProjectFile.FullName);
-
-                return false;
-            }
-        }
-
-        /// <summary>
-        ///     Suggest package Ids based on the specified package Id prefix.
-        /// </summary>
-        /// <param name="packageIdPrefix">
-        ///     The package Id prefix.
-        /// </param>
-        /// <param name="includePrerelease">
-        ///     Include packages for which only pre-release versions are available?
-        /// </param>
-        /// <param name="cancellationToken">
-        ///     An optional <see cref="CancellationToken"/> that can be used to cancel the operation.
-        /// </param>
-        /// <returns>
-        ///     A task that resolves to a sorted set of suggested package Ids.
-        /// </returns>
-        public virtual async Task<SortedSet<string>> SuggestPackageIds(string packageIdPrefix, bool includePrerelease, CancellationToken cancellationToken = default(CancellationToken))
-        {
-            // We don't actually need a working MSBuild project for this, but we do want parseable XML.
-            if (!HasXml)
-                throw new InvalidOperationException($"XML for project '{ProjectFile.FullName}' is not loaded.");
-
-            Log.Debug("Requesting suggestions for NuGet package Ids matching prefix {PackageIdPrefix} (include pre-release: {IncludePreRelease})...",
-                packageIdPrefix,
-                includePrerelease
-            );
-
-            SortedSet<string> packageIds = await _autoCompleteResources.SuggestPackageIds(packageIdPrefix, includePrerelease, cancellationToken: cancellationToken);
-
-            Log.Debug("Found {PackageIdSuggestionCount} suggestions for NuGet package Ids matching prefix {PackageIdPrefix} (include pre-release: {IncludePreRelease}).",
-                packageIds.Count,
-                packageIdPrefix,
-                includePrerelease
-            );
-            
-            return packageIds;
-        }
-
-        /// <summary>
-        ///     Suggest package versions for the specified package.
-        /// </summary>
-        /// <param name="packageId">
-        ///     The package Id.
-        /// </param>
-        /// <param name="includePrerelease">
-        ///     Include pre-release package versions?
-        /// </param>
-        /// <param name="cancellationToken">
-        ///     An optional <see cref="CancellationToken"/> that can be used to cancel the operation.
-        /// </param>
-        /// <returns>
-        ///     A task that resolves to a sorted set of suggested package versions.
-        /// </returns>
-        public virtual async Task<SortedSet<NuGetVersion>> SuggestPackageVersions(string packageId, bool includePrerelease, CancellationToken cancellationToken = default(CancellationToken))
-        {
-            // We don't actually need a working MSBuild project for this, but we do want parseable XML.
-            if (!HasXml)
-                throw new InvalidOperationException($"XML for project '{ProjectFile.FullName}' is not loaded.");
-
-            Log.Debug("Requesting suggestions for NuGet package versions matching Id {PackageId} (include pre-release: {IncludePreRelease})...",
-                packageId,
-                includePrerelease
-            );
-
-            SortedSet<NuGetVersion> packageVersions = await _autoCompleteResources.SuggestPackageVersions(packageId, includePrerelease, cancellationToken: cancellationToken);
-
-            Log.Debug("Found {PackageVersionSuggestionCount} suggestions for NuGet package versions matching Id {PackageId} (include pre-release: {IncludePreRelease}).",
-                packageVersions.Count,
-                packageId,
-                includePrerelease
-            );
-
-            return packageVersions;
-        }
-
-        /// <summary>
-        ///     Warm up the project's NuGet client.
-        /// </summary>
-        protected virtual void WarmUpNuGetClient()
-        {
-            SuggestPackageIds("Newtonsoft.Json", includePrerelease: false).ContinueWith(task =>
-            {
-                foreach (Exception exception in task.Exception.Flatten().InnerExceptions)
-                {
-                    Log.Debug(exception,
-                        "Error initialising NuGet client. {ErrorMessage}",
-                        exception.Message
-                    );
-                }
-            }, TaskContinuationOptions.OnlyOnFaulted);
+            bool loaded = TryLoadProject();
         }
 
         /// <summary>
@@ -479,73 +210,10 @@ namespace MSBuildProjectTools.LanguageServer.Documents
         /// </summary>
         public virtual void Unload()
         {
-            TryUnloadMSBuildProject();
-            MSBuildLocator = null;
-            IsMSBuildProjectCached = false;
+            TryUnloadProject();
 
-            Xml = null;
-            XmlPositions = null;
+            SourcePositions = null;
             IsDirty = false;
-        }
-
-        /// <summary>
-        ///     Get the XML object (if any) at the specified position in the project file.
-        /// </summary>
-        /// <param name="position">
-        ///     The target position.
-        /// </param>
-        /// <returns>
-        ///     The object, or <c>null</c> if no object was found at the specified position.
-        /// </returns>
-        public SyntaxNode GetXmlAtPosition(Position position)
-        {
-            if (position == null)
-                throw new ArgumentNullException(nameof(position));
-
-            if (!HasXml)
-                throw new InvalidOperationException($"XML for project '{ProjectFile.FullName}' is not loaded.");
-
-            int absolutePosition = XmlPositions.GetAbsolutePosition(position);
-
-            return Xml.FindNode(position, XmlPositions);
-        }
-
-        /// <summary>
-        ///     Get the XML object (if any) at the specified position in the project file.
-        /// </summary>
-        /// <typeparam name="TXml">
-        ///     The type of XML object to return.
-        /// </typeparam>
-        /// <param name="position">
-        ///     The target position.
-        /// </param>
-        /// <returns>
-        ///     The object, or <c>null</c> no object of the specified type was found at the specified position.
-        /// </returns>
-        public TXml GetXmlAtPosition<TXml>(Position position)
-            where TXml : SyntaxNode
-        {
-            return GetXmlAtPosition(position) as TXml;
-        }
-
-        /// <summary>
-        ///     Get the MSBuild object (if any) at the specified position in the project file.
-        /// </summary>
-        /// <param name="position">
-        ///     The target position.
-        /// </param>
-        /// <returns>
-        ///     The MSBuild object, or <c>null</c> no object was found at the specified position.
-        /// </returns>
-        public MSBuildObject GetMSBuildObjectAtPosition(Position position)
-        {
-            if (!HasMSBuildProject)
-                throw new InvalidOperationException($"MSBuild project '{ProjectFile.FullName}' is not loaded.");
-
-            if (IsMSBuildProjectCached)
-                throw new InvalidOperationException($"MSBuild project '{ProjectFile.FullName}' is a cached (out-of-date) copy because the project XML is currently invalid; positional lookups can't work in this scenario.");
-
-            return MSBuildLocator.Find(position);
         }
 
         /// <summary>
@@ -555,7 +223,7 @@ namespace MSBuildProjectTools.LanguageServer.Documents
         ///     The MSBuild expression.
         /// </param>
         /// <param name="relativeTo">
-        ///     The range of the <see cref="XSNode"/> that contains the expression.
+        ///     The range of the <see cref="SourceNode"/> that contains the expression.
         /// </param>
         /// <returns>
         ///     The containing <see cref="Range"/>.
@@ -564,10 +232,10 @@ namespace MSBuildProjectTools.LanguageServer.Documents
         {
             if (expression == null)
                 throw new ArgumentNullException(nameof(expression));
-            
+
             if (relativeTo == null)
                 throw new ArgumentNullException(nameof(relativeTo));
-            
+
             return GetRange(expression, relativeTo.Start);
         }
 
@@ -578,7 +246,7 @@ namespace MSBuildProjectTools.LanguageServer.Documents
         ///     The MSBuild expression.
         /// </param>
         /// <param name="relativeToPosition">
-        ///     The starting position of the <see cref="XSNode"/> that contains the expression.
+        ///     The starting position of the <see cref="SourceNode"/> that contains the expression.
         /// </param>
         /// <returns>
         ///     The containing <see cref="Range"/>.
@@ -591,91 +259,22 @@ namespace MSBuildProjectTools.LanguageServer.Documents
             if (relativeToPosition == null)
                 throw new ArgumentNullException(nameof(relativeToPosition));
 
-            if (!HasXml)
-                throw new InvalidOperationException($"XML for project '{ProjectFile.FullName}' is not loaded.");
-                
-            int absoluteBasePosition = XmlPositions.GetAbsolutePosition(relativeToPosition);
+            int absoluteBasePosition = SourcePositions.GetAbsolutePosition(relativeToPosition);
 
-            return XmlPositions.GetRange(
+            return SourcePositions.GetRange(
                 absoluteBasePosition + expression.AbsoluteStart,
                 absoluteBasePosition + expression.AbsoluteEnd
             );
         }
 
         /// <summary>
-        ///     Retrieve metadata for all tasks defined in the project.
+        ///     Dispose of resources being used by the <see cref="ProjectDocument"/>.
         /// </summary>
-        /// <param name="cancellationToken">
-        ///     An optional cancellation token that can be used to cancel the operation.
+        /// <param name="disposing">
+        ///     Explicit disposal?
         /// </param>
-        /// <returns>
-        ///     A dictionary of task assembly metadata, keyed by assembly path.
-        /// </returns>
-        /// <remarks>
-        ///     Cache metadata (and persist cache to file).
-        /// </remarks>
-        public async Task<List<MSBuildTaskAssemblyMetadata>> GetMSBuildProjectTaskAssemblies(CancellationToken cancellationToken = default(CancellationToken))
+        protected virtual void Dispose(bool disposing)
         {
-            if (!HasMSBuildProject)
-                throw new InvalidOperationException($"MSBuild project '{ProjectFile.FullName}' is not loaded.");
-
-            List<string> taskAssemblyFiles = new List<string>
-            {
-                // Include "built-in" tasks.
-                Path.Combine(DotNetRuntimeInfo.GetCurrent().BaseDirectory, "Microsoft.Build.Tasks.Core.dll"),
-                Path.Combine(DotNetRuntimeInfo.GetCurrent().BaseDirectory, "Roslyn", "Microsoft.Build.Tasks.CodeAnalysis.dll")
-            };
-
-            taskAssemblyFiles.AddRange(
-                MSBuildProject.GetAllUsingTasks()
-                    .Where(usingTask => !String.IsNullOrWhiteSpace(usingTask.AssemblyFile))
-                    .Distinct(UsingTaskAssemblyEqualityComparer.Instance) // Ensure each assembly path is only evaluated once.
-                    .Select(usingTask => Path.GetFullPath(
-                        Path.Combine(
-                            usingTask.ContainingProject.DirectoryPath,
-                            MSBuildProject.ExpandString(usingTask.AssemblyFile)
-                                .Replace(Path.AltDirectorySeparatorChar, Path.DirectorySeparatorChar)
-                        )
-                    ))
-                    .Distinct(StringComparer.OrdinalIgnoreCase)
-            );
-
-            cancellationToken.ThrowIfCancellationRequested();
-
-            List<MSBuildTaskAssemblyMetadata> metadata = new List<MSBuildTaskAssemblyMetadata>();
-            foreach (string taskAssemblyFile in taskAssemblyFiles)
-            {
-                if (!File.Exists(taskAssemblyFile))
-                {
-                    Log.Information("Skipped scan of task metadata for assembly {TaskAssemblyFile} (file not found).", taskAssemblyFile);
-
-                    continue;
-                }
-
-                cancellationToken.ThrowIfCancellationRequested();
-
-                MSBuildTaskAssemblyMetadata assemblyMetadata = await Workspace.TaskMetadataCache.GetAssemblyMetadata(taskAssemblyFile);
-                metadata.Add(assemblyMetadata);
-            }
-
-            // Persist any changes to cached metadata.
-            Workspace.PersistTaskMetadataCache();
-
-            return metadata;
-        }
-
-        /// <summary>
-        ///     Get overrides (if any) for MSBuild global properties.
-        /// </summary>
-        protected virtual Dictionary<string, string> GetMSBuildGlobalPropertyOverrides()
-        {
-            var propertyOverrides = new Dictionary<string, string>();
-            if (!String.IsNullOrWhiteSpace(Workspace.Configuration.MSBuild.ExtensionsPath))
-                propertyOverrides[MSBuildHelper.WellKnownPropertyNames.MSBuildExtensionsPath] = Workspace.Configuration.MSBuild.ExtensionsPath;
-            if (!String.IsNullOrWhiteSpace(Workspace.Configuration.MSBuild.ExtensionsPath32))
-                propertyOverrides[MSBuildHelper.WellKnownPropertyNames.MSBuildExtensionsPath32] = Workspace.Configuration.MSBuild.ExtensionsPath32;
-
-            return propertyOverrides;
         }
 
         /// <summary>
@@ -684,7 +283,7 @@ namespace MSBuildProjectTools.LanguageServer.Documents
         /// <returns>
         ///     <c>true</c>, if the project was successfully loaded; otherwise, <c>false</c>.
         /// </returns>
-        protected abstract bool TryLoadMSBuildProject();
+        protected abstract bool TryLoadProject();
 
         /// <summary>
         ///     Attempt to unload the underlying MSBuild project.
@@ -692,7 +291,7 @@ namespace MSBuildProjectTools.LanguageServer.Documents
         /// <returns>
         ///     <c>true</c>, if the project was successfully unloaded; otherwise, <c>false</c>.
         /// </returns>
-        protected abstract bool TryUnloadMSBuildProject();
+        protected abstract bool TryUnloadProject();
 
         /// <summary>
         ///     Remove all diagnostics for the project file.
@@ -721,7 +320,7 @@ namespace MSBuildProjectTools.LanguageServer.Documents
         {
             if (String.IsNullOrWhiteSpace(message))
                 throw new ArgumentException("Argument cannot be null, empty, or entirely composed of whitespace: 'message'.", nameof(message));
-            
+
             _diagnostics.Add(new LspModels.Diagnostic
             {
                 Severity = severity,

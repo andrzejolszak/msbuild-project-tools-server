@@ -1,25 +1,20 @@
+using System;
+using System.IO;
+using System.Linq;
+using System.Threading.Tasks;
 using OmniSharp.Extensions.JsonRpc;
-using OmniSharp.Extensions.LanguageServer;
 using OmniSharp.Extensions.LanguageServer.Protocol;
 using OmniSharp.Extensions.LanguageServer.Protocol.Client.Capabilities;
 using OmniSharp.Extensions.LanguageServer.Protocol.Models;
 using OmniSharp.Extensions.LanguageServer.Protocol.Server.Capabilities;
 using OmniSharp.Extensions.LanguageServer.Server;
-using NuGet.Configuration;
 using Serilog;
 using Serilog.Events;
-using System;
-using System.Collections.Generic;
-using System.Threading.Tasks;
-using System.Linq;
-using System.Threading;
-using System.IO;
 
 namespace MSBuildProjectTools.LanguageServer.Handlers
 {
     using CustomProtocol;
     using Documents;
-    using SemanticModel;
     using Utilities;
 
     /// <summary>
@@ -45,7 +40,7 @@ namespace MSBuildProjectTools.LanguageServer.Handlers
         {
             if (workspace == null)
                 throw new ArgumentNullException(nameof(workspace));
-            
+
             Workspace = workspace;
         }
 
@@ -67,7 +62,7 @@ namespace MSBuildProjectTools.LanguageServer.Handlers
         /// <summary>
         ///     The document selector that describes documents to synchronise.
         /// </summary>
-        DocumentSelector DocumentSelector { get; } = new DocumentSelector(
+        private DocumentSelector DocumentSelector { get; } = new DocumentSelector(
             new DocumentFilter
             {
                 Pattern = "**/*.*",
@@ -97,22 +92,22 @@ namespace MSBuildProjectTools.LanguageServer.Handlers
         /// <summary>
         ///     The document workspace.
         /// </summary>
-        Workspace Workspace { get; }
+        private Workspace Workspace { get; }
 
         /// <summary>
         ///     Has the client supplied synchronisation capabilities?
         /// </summary>
-        bool HaveSynchronizationCapabilities => SynchronizationCapabilities != null;
+        private bool HaveSynchronizationCapabilities => SynchronizationCapabilities != null;
 
         /// <summary>
         ///     The client's synchronisation capabilities.
         /// </summary>
-        SynchronizationCapability SynchronizationCapabilities { get; set; }
+        private SynchronizationCapability SynchronizationCapabilities { get; set; }
 
         /// <summary>
         ///     Get registration options for handling document events.
         /// </summary>
-        TextDocumentRegistrationOptions DocumentRegistrationOptions
+        private TextDocumentRegistrationOptions DocumentRegistrationOptions
         {
             get => new TextDocumentRegistrationOptions
             {
@@ -123,7 +118,7 @@ namespace MSBuildProjectTools.LanguageServer.Handlers
         /// <summary>
         ///     Get registration options for handling document-change events.
         /// </summary>
-        TextDocumentChangeRegistrationOptions DocumentChangeRegistrationOptions
+        private TextDocumentChangeRegistrationOptions DocumentChangeRegistrationOptions
         {
             get => new TextDocumentChangeRegistrationOptions
             {
@@ -135,249 +130,13 @@ namespace MSBuildProjectTools.LanguageServer.Handlers
         /// <summary>
         ///     Get registration options for handling document save events.
         /// </summary>
-        TextDocumentSaveRegistrationOptions DocumentSaveRegistrationOptions
+        private TextDocumentSaveRegistrationOptions DocumentSaveRegistrationOptions
         {
             get => new TextDocumentSaveRegistrationOptions
             {
                 DocumentSelector = DocumentSelector,
                 IncludeText = Options.Save.IncludeText
             };
-        }
-
-        /// <summary>
-        ///     Called when a text document is opened.
-        /// </summary>
-        /// <param name="parameters">
-        ///     The notification parameters.
-        /// </param>
-        /// <returns>
-        ///     A <see cref="Task"/> representing the operation.
-        /// </returns>
-        async Task OnDidOpenTextDocument(DidOpenTextDocumentParams parameters)
-        {
-            Server.NotifyBusy("Loading project...");
-
-            ProjectDocument projectDocument = await Workspace.GetProjectDocument(parameters.TextDocument.Uri);
-            Workspace.PublishDiagnostics(projectDocument);
-
-            // Only enable expression-related language service facilities if they're using our custom "MSBuild" language type (rather than "XML").
-            projectDocument.EnableExpressions = parameters.TextDocument.LanguageId == "msbuild";
-
-            Server.ClearBusy("Project loaded.");
-
-            if (!projectDocument.HasXml)
-            {
-                Log.Warning("Failed to load project file {ProjectFilePath}.", projectDocument.ProjectFile.FullName);
-
-                return;
-            }
-
-            switch (projectDocument)
-            {
-                case MasterProjectDocument masterProjectDocument:
-                {
-                    if (masterProjectDocument.HasMSBuildProject)
-                        Log.Information("Successfully loaded project {ProjectFilePath}.", projectDocument.ProjectFile.FullName);
-
-                    break;
-                }
-                case SubProjectDocument subProjectDocument:
-                {
-                    if (subProjectDocument.HasMSBuildProject)
-                    {
-                        Log.Information("Successfully loaded project {ProjectFilePath} as a sub-project of {MasterProjectFileName}.",
-                            projectDocument.ProjectFile.FullName,
-                            subProjectDocument.MasterProjectDocument.ProjectFile.Name
-                        );
-                    }
-
-                    break;
-                }
-            }
-            
-            if (Log.IsEnabled(LogEventLevel.Verbose))
-            {
-                Log.Verbose("===========================");
-                foreach (PackageSource packageSource in projectDocument.ConfiguredPackageSources)
-                {
-                    Log.Verbose(" - Project uses package source {PackageSourceName} ({PackageSourceUrl})",
-                        packageSource.Name,
-                        packageSource.Source
-                    );
-                }
-
-                Log.Verbose("===========================");
-                if (projectDocument.HasMSBuildProject)
-                {
-                    if (Workspace.Configuration.Language.CompletionsFromProject.Contains(CompletionSource.Task))
-                    {
-                        Log.Verbose("Scanning task definitions for project {ProjectName}...", projectDocument.ProjectFile.Name);
-                        List<MSBuildTaskAssemblyMetadata> taskAssemblies = await projectDocument.GetMSBuildProjectTaskAssemblies();
-                        Log.Verbose("Scan complete for task definitions of project {ProjectName} ({AssemblyCount} assemblies scanned).", projectDocument.ProjectFile.Name, taskAssemblies.Count);
-
-                        Log.Verbose("===========================");
-                    }
-
-                    if (!projectDocument.IsMSBuildProjectCached)
-                    {
-                        MSBuildObject[] msbuildObjects = projectDocument.MSBuildObjects.ToArray();
-                        Log.Verbose("MSBuild project loaded ({MSBuildObjectCount} MSBuild objects).", msbuildObjects.Length);
-
-                        foreach (MSBuildObject msbuildObject in msbuildObjects)
-                        {
-                            Log.Verbose("{Type:l}: {Kind} {Name} spanning {XmlRange}",
-                                msbuildObject.GetType().Name,
-                                msbuildObject.Kind,
-                                msbuildObject.Name,
-                                msbuildObject.XmlRange
-                            );
-                        }
-                    }
-                    else
-                        Log.Verbose("MSBuild project not loaded; will used cached project state (as long as positional lookups are not required).");
-                }
-                else
-                    Log.Verbose("MSBuild project not loaded.");
-            }
-        }
-
-        /// <summary>
-        ///     Called when a text document is changed.
-        /// </summary>
-        /// <param name="parameters">
-        ///     The notification parameters.
-        /// </param>
-        /// <returns>
-        ///     A <see cref="Task"/> representing the operation.
-        /// </returns>
-        async Task OnDidChangeTextDocument(DidChangeTextDocumentParams parameters)
-        {
-            Log.Verbose("Reloading project {ProjectFile}...",
-                VSCodeDocumentUri.GetFileSystemPath(parameters.TextDocument.Uri)
-            );
-
-            TextDocumentContentChangeEvent mostRecentChange = parameters.ContentChanges.LastOrDefault();
-            if (mostRecentChange == null)
-                return;
-
-            string updatedDocumentText = mostRecentChange.Text;
-            ProjectDocument projectDocument = await Workspace.TryUpdateProjectDocument(parameters.TextDocument.Uri, updatedDocumentText);
-            Workspace.PublishDiagnostics(projectDocument);
-
-            if (Log.IsEnabled(LogEventLevel.Verbose))
-            {
-                Log.Verbose("===========================");
-                if (projectDocument.HasMSBuildProject)
-                {
-                    if (!projectDocument.IsMSBuildProjectCached)
-                    {
-                        MSBuildObject[] msbuildObjects = projectDocument.MSBuildObjects.ToArray();
-                        Log.Verbose("MSBuild project loaded ({MSBuildObjectCount} MSBuild objects).", msbuildObjects.Length);
-
-                        foreach (MSBuildObject msbuildObject in msbuildObjects)
-                        {
-                            Log.Verbose("{Type:l}: {Kind} {Name} spanning {XmlRange}",
-                                msbuildObject.GetType().Name,
-                                msbuildObject.Kind,
-                                msbuildObject.Name,
-                                msbuildObject.XmlRange
-                            );
-                        }
-                    }
-                    else
-                        Log.Verbose("MSBuild project not loaded; will used cached project state (as long as positional lookups are not required).");
-                }
-                else
-                    Log.Verbose("MSBuild project not loaded.");
-            }
-        }
-
-        /// <summary>
-        ///     Called when a text document is saved.
-        /// </summary>
-        /// <param name="parameters">
-        ///     The notification parameters.
-        /// </param>
-        /// <returns>
-        ///     A <see cref="Task"/> representing the operation.
-        /// </returns>
-        async Task OnDidSaveTextDocument(DidSaveTextDocumentParams parameters)
-        {
-            Log.Information("Reloading project {ProjectFile}...",
-                VSCodeDocumentUri.GetFileSystemPath(parameters.TextDocument.Uri)
-            );
-
-            ProjectDocument projectDocument = await Workspace.GetProjectDocument(parameters.TextDocument.Uri, reload: true);
-            Workspace.PublishDiagnostics(projectDocument);
-
-            if (!projectDocument.HasXml)
-            {
-                Log.Warning("Failed to reload project file {ProjectFilePath} (XML is invalid).", projectDocument.ProjectFile.FullName);
-
-                return;
-            }
-
-            if (!projectDocument.HasMSBuildProject)
-            {
-                Log.Warning("Reloaded project file {ProjectFilePath} (XML is valid, but MSBuild project is not).", projectDocument.ProjectFile.FullName);
-
-                return;
-            }
-
-            Log.Information("Successfully reloaded project {ProjectFilePath}.", projectDocument.ProjectFile.FullName);
-        }
-
-        /// <summary>
-        ///     Called when a text document is closed.
-        /// </summary>
-        /// <param name="parameters">
-        ///     The notification parameters.
-        /// </param>
-        /// <returns>
-        ///     A <see cref="Task"/> representing the operation.
-        /// </returns>
-        async Task OnDidCloseTextDocument(DidCloseTextDocumentParams parameters)
-        {
-            await Workspace.RemoveProjectDocument(parameters.TextDocument.Uri);
-
-            Log.Information("Unloaded project {ProjectFile}.",
-                VSCodeDocumentUri.GetFileSystemPath(parameters.TextDocument.Uri)
-            );
-        }
-
-        /// <summary>
-        ///     Get attributes for the specified text document.
-        /// </summary>
-        /// <param name="documentUri">
-        ///     The document URI.
-        /// </param>
-        /// <returns>
-        ///     The document attributes.
-        /// </returns>
-        TextDocumentAttributes GetTextDocumentAttributes(Uri documentUri)
-        {
-            string documentFilePath = VSCodeDocumentUri.GetFileSystemPath(documentUri);
-            if (documentFilePath == null)
-                return new TextDocumentAttributes(documentUri, "plaintext");
-
-            string extension = Path.GetExtension(documentFilePath).ToLower();
-            switch (extension)
-            {
-                case "props":
-                case "targets":
-                {
-                    break;
-                }
-                default:
-                {
-                    if (extension.EndsWith("proj"))
-                        break;
-
-                    return new TextDocumentAttributes(documentUri, "plaintext");
-                }
-            }
-
-            return new TextDocumentAttributes(documentUri, "msbuild");
         }
 
         /// <summary>
@@ -393,7 +152,7 @@ namespace MSBuildProjectTools.LanguageServer.Handlers
         {
             if (parameters == null)
                 throw new ArgumentNullException(nameof(parameters));
-            
+
             using (BeginOperation("OnDidOpenTextDocument"))
             {
                 try
@@ -538,6 +297,139 @@ namespace MSBuildProjectTools.LanguageServer.Handlers
                 throw new ArgumentNullException(nameof(documentUri));
 
             return GetTextDocumentAttributes(documentUri);
+        }
+
+        /// <summary>
+        ///     Called when a text document is opened.
+        /// </summary>
+        /// <param name="parameters">
+        ///     The notification parameters.
+        /// </param>
+        /// <returns>
+        ///     A <see cref="Task"/> representing the operation.
+        /// </returns>
+        private async Task OnDidOpenTextDocument(DidOpenTextDocumentParams parameters)
+        {
+            Server.NotifyBusy("Loading project...");
+
+            ProjectDocument projectDocument = await Workspace.GetProjectDocument(parameters.TextDocument.Uri);
+            Workspace.PublishDiagnostics(projectDocument);
+
+            // Only enable expression-related language service facilities if they're using our custom "MSBuild" language type (rather than "XML").
+            projectDocument.EnableExpressions = parameters.TextDocument.LanguageId == "msbuild";
+
+            Server.ClearBusy("Project loaded.");
+
+            if (Log.IsEnabled(LogEventLevel.Verbose))
+            {
+                Log.Verbose("===========================");
+                Log.Verbose("===========================");
+                Log.Verbose("MSBuild project not loaded.");
+            }
+        }
+
+        /// <summary>
+        ///     Called when a text document is changed.
+        /// </summary>
+        /// <param name="parameters">
+        ///     The notification parameters.
+        /// </param>
+        /// <returns>
+        ///     A <see cref="Task"/> representing the operation.
+        /// </returns>
+        private async Task OnDidChangeTextDocument(DidChangeTextDocumentParams parameters)
+        {
+            Log.Verbose("Reloading project {ProjectFile}...",
+                VSCodeDocumentUri.GetFileSystemPath(parameters.TextDocument.Uri)
+            );
+
+            TextDocumentContentChangeEvent mostRecentChange = parameters.ContentChanges.LastOrDefault();
+            if (mostRecentChange == null)
+                return;
+
+            string updatedDocumentText = mostRecentChange.Text;
+            ProjectDocument projectDocument = await Workspace.TryUpdateProjectDocument(parameters.TextDocument.Uri, updatedDocumentText);
+            Workspace.PublishDiagnostics(projectDocument);
+
+            if (Log.IsEnabled(LogEventLevel.Verbose))
+            {
+                Log.Verbose("===========================");
+                Log.Verbose("MSBuild project not loaded; will used cached project state (as long as positional lookups are not required).");
+            }
+        }
+
+        /// <summary>
+        ///     Called when a text document is saved.
+        /// </summary>
+        /// <param name="parameters">
+        ///     The notification parameters.
+        /// </param>
+        /// <returns>
+        ///     A <see cref="Task"/> representing the operation.
+        /// </returns>
+        private async Task OnDidSaveTextDocument(DidSaveTextDocumentParams parameters)
+        {
+            Log.Information("Reloading project {ProjectFile}...",
+                VSCodeDocumentUri.GetFileSystemPath(parameters.TextDocument.Uri)
+            );
+
+            ProjectDocument projectDocument = await Workspace.GetProjectDocument(parameters.TextDocument.Uri, reload: true);
+            Workspace.PublishDiagnostics(projectDocument);
+
+            Log.Information("Successfully reloaded project {ProjectFilePath}.", projectDocument.ProjectFile.FullName);
+        }
+
+        /// <summary>
+        ///     Called when a text document is closed.
+        /// </summary>
+        /// <param name="parameters">
+        ///     The notification parameters.
+        /// </param>
+        /// <returns>
+        ///     A <see cref="Task"/> representing the operation.
+        /// </returns>
+        private async Task OnDidCloseTextDocument(DidCloseTextDocumentParams parameters)
+        {
+            await Workspace.RemoveProjectDocument(parameters.TextDocument.Uri);
+
+            Log.Information("Unloaded project {ProjectFile}.",
+                VSCodeDocumentUri.GetFileSystemPath(parameters.TextDocument.Uri)
+            );
+        }
+
+        /// <summary>
+        ///     Get attributes for the specified text document.
+        /// </summary>
+        /// <param name="documentUri">
+        ///     The document URI.
+        /// </param>
+        /// <returns>
+        ///     The document attributes.
+        /// </returns>
+        private TextDocumentAttributes GetTextDocumentAttributes(Uri documentUri)
+        {
+            string documentFilePath = VSCodeDocumentUri.GetFileSystemPath(documentUri);
+            if (documentFilePath == null)
+                return new TextDocumentAttributes(documentUri, "plaintext");
+
+            string extension = Path.GetExtension(documentFilePath).ToLower();
+            switch (extension)
+            {
+                case "props":
+                case "targets":
+                    {
+                        break;
+                    }
+                default:
+                    {
+                        if (extension.EndsWith("proj"))
+                            break;
+
+                        return new TextDocumentAttributes(documentUri, "plaintext");
+                    }
+            }
+
+            return new TextDocumentAttributes(documentUri, "msbuild");
         }
     }
 }
